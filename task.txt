@@ -1,0 +1,210 @@
+# Prompt para o Claude Code — Microsserviço FarmEye
+
+## Objetivo
+
+Criar um microsserviço REST em Spring Boot chamado **FarmEye** (backend de uma solução de
+agricultura de precisão que monitora a saúde da lavoura por NDVI de satélite). Este é um
+entregável acadêmico (FIAP — Global Solution 2026, disciplina Microservice and Web Engineering).
+
+**REGRA MAIS IMPORTANTE:** o jeito de escrever **todas** as camadas (entity, dto, repository,
+service, controller, exceptions, handler, properties) deve **replicar exatamente o estilo de
+código** do repositório de referência da professora abaixo. NÃO invente padrões, NÃO use estilo
+de tutoriais da internet, NÃO use `record`, NÃO use `ResponseStatusException`, NÃO use MapStruct.
+Copie a forma do repositório e só troque o domínio.
+
+## Repositório de referência (molde canônico)
+
+```
+https://github.com/cidarosa/ms-produto-sis-26
+```
+
+Comece clonando esse repositório e use-o como template literal:
+
+```bash
+git clone --depth 1 https://github.com/cidarosa/ms-produto-sis-26.git /tmp/ref-cida
+```
+
+Estude cada arquivo dentro de `/tmp/ref-cida/src/main/java/.../ms/produto/` e replique a estrutura,
+as anotações, a injeção de dependência (`@Autowired` em campo), os nomes de métodos e o estilo
+linha a linha. O nosso projeto é o mesmo esqueleto, só com outro domínio.
+
+## Mapeamento de domínio (de → para)
+
+O repositório dela tem duas entidades com relação 1:N. Mapeie assim:
+
+| Repositório da Cida (referência) | Nosso projeto FarmEye |
+|---|---|
+| `Categoria` (lado "1", `@OneToMany`)  | `Fazenda` (lado "1", `@OneToMany`) |
+| `Produto` (lado "N", `@ManyToOne`)    | `LeituraNdvi` (lado "N", `@ManyToOne`) |
+| `CategoriaDto`, `ProdutoDTO`          | `FazendaDto`, `LeituraNdviDto` |
+| `CategoriaRepository`, `ProdutoRepository` | `FazendaRepository`, `LeituraNdviRepository` |
+| `CategoriaService`, `ProdutoService`  | `FazendaService`, `LeituraNdviService` |
+| `CategoriaController`, `ProdutoController` | `FazendaController`, `LeituraNdviController` |
+
+Toda a estrutura de `exceptions/` (DatabaseException, ResourceNotFoundException, dto/CustomErrorDto,
+dto/FieldMessageDto, dto/ValidationErrorDto, handler/GlobalExceptionHandler) deve ser copiada
+IGUAL — esses arquivos são genéricos e não mudam com o domínio.
+
+## Coordenadas do projeto
+
+- **Maven**, **Java 17**
+- **Spring Boot 3.5.14** (a prova exige 3.5.14 ou superior — NÃO use a 3.5.10 do repo dela, que está abaixo do exigido)
+- **groupId:** `juan_556678`
+- **artifactId:** `farmeye`
+- **Pacote base:** `juan_556678.farmeye`
+- **Classe main:** `FarmeyeApplication`
+
+Replique o `pom.xml` dela (mesmas dependências e plugins), mudando só a versão do parent para
+`3.5.14`, o group, o artifact, o name e a description. Dependências: spring-boot-starter-web,
+spring-boot-starter-data-jpa, spring-boot-starter-validation, h2 (runtime), lombok (optional),
+spring-boot-devtools (runtime/optional), spring-boot-starter-test (test). Mantenha o
+`maven-compiler-plugin` com o annotationProcessor do Lombok e o `spring-boot-maven-plugin`
+excluindo o Lombok, igual ao dela. Inclua o Maven wrapper (`mvnw`, `mvnw.cmd`, `.mvn/`).
+
+## Especificação das entidades
+
+Use Lombok igual ao repo dela (`@Getter @Setter @NoArgsConstructor @AllArgsConstructor
+@EqualsAndHashCode(of = "id")`), `@Entity`, `@Table(name = "tb_...")`, `@Id` com
+`@GeneratedValue(strategy = GenerationType.IDENTITY)`.
+
+**DIFERENÇA OBRIGATÓRIA EM RELAÇÃO AO REPO DELA:** as entidades dela quase não usam `@Column`,
+mas a prova EXIGE `@Column` com `name`, `nullable`, `length` etc. em todos os atributos. Então
+adicione `@Column` em cada atributo (exceto o id e as relações), seguindo o resto do estilo dela.
+
+### Entidade `Fazenda` — tabela `tb_fazenda` (lado "1")
+
+| Atributo | Tipo Java | Coluna / restrições |
+|---|---|---|
+| `id` | `Long` | `@Id @GeneratedValue(IDENTITY)` |
+| `nome` | `String` | `@Column(name="nome", nullable=false, length=100)` |
+| `municipio` | `String` | `@Column(name="municipio", nullable=false, length=80)` |
+| `areaHectares` | `Double` | `@Column(name="area_hectares", nullable=false)` — **atributo numérico** |
+| `dataCadastro` | `LocalDate` | `@Column(name="data_cadastro", nullable=false)` — **atributo data** |
+| `leituras` | `List<LeituraNdvi>` | `@OneToMany(mappedBy="fazenda")`, inicializar `= new ArrayList<>()` |
+
+### Entidade `LeituraNdvi` — tabela `tb_leitura_ndvi` (lado "N")
+
+| Atributo | Tipo Java | Coluna / restrições |
+|---|---|---|
+| `id` | `Long` | `@Id @GeneratedValue(IDENTITY)` |
+| `nomeArea` | `String` | `@Column(name="nome_area", nullable=false, length=100)` |
+| `valorNdvi` | `Double` | `@Column(name="valor_ndvi", nullable=false)` — **atributo numérico** |
+| `status` | `String` | `@Column(name="status", nullable=false, length=20)` (ex.: SAUDAVEL, ATENCAO, ALERTA) |
+| `dataLeitura` | `LocalDate` | `@Column(name="data_leitura", nullable=false)` — **atributo data** |
+| `fazenda` | `Fazenda` | `@ManyToOne @JoinColumn(name="fazenda_id", nullable=false)` |
+
+As duas entidades têm 4 atributos + id, com um numérico e uma data cada — atendendo a prova.
+
+## DTOs (replicar o estilo de `CategoriaDto` / `ProdutoDTO`)
+
+Mesmo padrão dela: `@Getter @NoArgsConstructor @AllArgsConstructor`, campos com constraints do
+Bean Validation, e um construtor que recebe a entidade e copia os campos (o DTO da entidade "N"
+instancia o DTO da entidade "1" dentro dele, igual ao `ProdutoDTO` que cria um `CategoriaDto`).
+
+### `FazendaDto`
+- `id` (Long, sem validação)
+- `nome` — `@NotBlank` + `@Size(min=3, max=100)`
+- `municipio` — `@NotBlank` + `@Size(min=2, max=80)`
+- `areaHectares` — `@NotNull` + `@Positive`
+- `dataCadastro` — `@NotNull` + `@PastOrPresent`
+- construtor `FazendaDto(Fazenda fazenda)` que copia os campos
+
+### `LeituraNdviDto`
+- `id` (Long, sem validação)
+- `nomeArea` — `@NotBlank` + `@Size(min=3, max=100)`
+- `valorNdvi` — `@NotNull` + `@DecimalMin("-1.0")` + `@DecimalMax("1.0")` (NDVI vai de -1 a 1)
+- `status` — `@NotBlank` + `@Size(min=3, max=20)`
+- `dataLeitura` — `@NotNull` + `@PastOrPresent`
+- `fazenda` — `@NotNull` (tipo `FazendaDto`)
+- construtor `LeituraNdviDto(LeituraNdvi leitura)` que copia os campos e faz `fazenda = new FazendaDto(leitura.getFazenda())`
+
+## Repositories, Services, Controllers
+
+- **Repositories:** interfaces vazias estendendo `JpaRepository<Entidade, Long>`, igual às dela.
+- **Services:** copiar o estilo de `CategoriaService` / `ProdutoService` — `@Service`, `@Autowired`
+  em campo, `@Transactional(readOnly = true)` nos finds, `@Transactional` nos save/update, método
+  privado `copyDtoToEntidade(...)`, lançando `ResourceNotFoundException` quando não encontra e
+  `DatabaseException` em violação de integridade. O `LeituraNdviService` injeta também o
+  `FazendaRepository` e usa `getReferenceById` para associar a fazenda, igual o `ProdutoService`
+  faz com a categoria. No update, **corrigir o bug do repo dela**: chamar `repository.save(...)`
+  antes de retornar o DTO (no `ProdutoService` dela o save foi esquecido no update — no nosso, salve).
+- **Controllers:** copiar o estilo de `CategoriaController` / `ProdutoController` —
+  `@RestController`, `@RequestMapping("/fazendas")` e `@RequestMapping("/leituras")`, todos os
+  métodos retornando `ResponseEntity`, GET-all (`ok`), GET-by-id (`ok`), POST (`created` com URI
+  via `ServletUriComponentsBuilder`), PUT (`ok`), DELETE (`noContent`). Use `@Valid @RequestBody`
+  nos POST/PUT. No DELETE use `ResponseEntity<Void>`.
+
+## Camada de exceptions (copiar IGUAL, sem mudança de domínio)
+
+Replique exatamente, só trocando o pacote base para `juan_556678.farmeye`:
+- `exceptions/DatabaseException` e `exceptions/ResourceNotFoundException` (ambas `extends RuntimeException`)
+- `exceptions/dto/CustomErrorDto` (timestamp, status, error, path)
+- `exceptions/dto/FieldMessageDto` (fieldName, message)
+- `exceptions/dto/ValidationErrorDto` (extends CustomErrorDto, lista de FieldMessageDto, método addError)
+- `exceptions/handler/GlobalExceptionHandler` (`@RestControllerAdvice`) tratando:
+  - `ResourceNotFoundException` → 404
+  - `MethodArgumentNotValidException` → 422 (preenchendo os FieldMessageDto)
+  - `HttpMessageNotReadableException` → 400
+  - `MethodArgumentTypeMismatchException` → 400
+  - `DatabaseException` → 409
+
+## Resources
+
+### `application.properties` (igual ao dela)
+```properties
+spring.application.name=farmeye
+spring.profiles.active=test
+spring.jpa.open-in-view=false
+```
+
+### `application-test.properties` (igual ao dela — H2)
+```properties
+server.error.include-message=always
+server.error.include-stacktrace=never
+
+spring.datasource.driverClassName=org.h2.Driver
+spring.datasource.url=jdbc:h2:mem:testdb
+spring.datasource.username=sa
+spring.datasource.password=
+
+spring.h2.console.enabled=true
+spring.h2.console.path=/h2-console
+
+spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+spring.jpa.defer-datasource-initialization=true
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true
+```
+
+### `import.sql` (carga inicial — ela usa import.sql, não data.sql) — 4 registros por entidade
+```sql
+INSERT INTO tb_fazenda(nome, municipio, area_hectares, data_cadastro) VALUES ('Fazenda Santa Rita', 'Ribeirão Preto', 320.5, '2026-01-15');
+INSERT INTO tb_fazenda(nome, municipio, area_hectares, data_cadastro) VALUES ('Sítio Boa Esperança', 'Uberlândia', 85.0, '2026-01-20');
+INSERT INTO tb_fazenda(nome, municipio, area_hectares, data_cadastro) VALUES ('Fazenda Horizonte', 'Sorriso', 1240.75, '2026-02-03');
+INSERT INTO tb_fazenda(nome, municipio, area_hectares, data_cadastro) VALUES ('Chácara Vale Verde', 'Londrina', 47.3, '2026-02-10');
+
+INSERT INTO tb_leitura_ndvi(nome_area, valor_ndvi, status, data_leitura, fazenda_id) VALUES ('Talhão Norte', 0.82, 'SAUDAVEL', '2026-03-01', 1);
+INSERT INTO tb_leitura_ndvi(nome_area, valor_ndvi, status, data_leitura, fazenda_id) VALUES ('Talhão Sul', 0.55, 'ATENCAO', '2026-03-01', 1);
+INSERT INTO tb_leitura_ndvi(nome_area, valor_ndvi, status, data_leitura, fazenda_id) VALUES ('Setor Leste', 0.31, 'ALERTA', '2026-03-05', 2);
+INSERT INTO tb_leitura_ndvi(nome_area, valor_ndvi, status, data_leitura, fazenda_id) VALUES ('Pivô Central', 0.74, 'SAUDAVEL', '2026-03-07', 3);
+```
+
+## Verificação final (obrigatória antes de terminar)
+
+1. `./mvnw clean compile` deve compilar sem erro.
+2. `./mvnw spring-boot:run` deve subir a aplicação com o profile `test` ativo e popular o H2 com os 8 registros.
+3. Testar os endpoints e confirmar os status codes:
+   - `GET /fazendas` e `GET /leituras` → 200 com os dados carregados
+   - `GET /fazendas/1` → 200; `GET /fazendas/999` → 404
+   - `POST /fazendas` com corpo inválido (ex.: nome vazio) → 422 com lista de erros de campo
+   - `POST /leituras` válido → 201 com header Location
+   - `PUT` → 200; `DELETE` → 204
+4. Estrutura de pacotes idêntica à do repo da Cida, adaptada ao domínio FarmEye.
+
+## O que NÃO fazer
+
+- NÃO usar a versão 3.5.10 do Spring Boot (usar 3.5.14).
+- NÃO usar `record`, `ResponseStatusException`, MapStruct, nem ModelMapper.
+- NÃO inventar camadas extras (nada de mappers, facades, etc.) — só as do repo dela.
+- NÃO criar uma terceira entidade — só Fazenda e LeituraNdvi.
+- NÃO basear o estilo de código em tutoriais da internet — o molde é o repo da Cida.
